@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Altec - Photo to monochrome-BMP</title>
+
+    <script type="module">
+
+        function hexToRgb(hex) {
+            hex = hex.replace(/^#/, "");
+            const bigint = parseInt(hex, 16);
+            const r = (bigint >> 16) & 255;
+            const g = (bigint >> 8) & 255;
+            const b = bigint & 255;
+
+            return [r, g, b];
+        };
+
+        function toMonochrome(imgData, threshold = 128) {
+            const newColorRgb = [0, 0, 0];
+
+            for (let i = 0; i < imgData.data.length; i += 4) {
+                if (imgData.data[i + 3] < 255) {
+                    imgData.data[i] = 255;
+                    imgData.data[i + 1] = 255;
+                    imgData.data[i + 2] = 255;
+                    imgData.data[i + 3] = 0;
+                    continue;
+                }
+
+                const gray =
+                    0.299 * imgData.data[i] +
+                    0.587 * imgData.data[i + 1] +
+                    0.114 * imgData.data[i + 2];
+
+                const binary = gray >= threshold ? 255 : 0;
+
+                imgData.data[i] = binary === 0 ? newColorRgb[0] : 255;
+                imgData.data[i + 1] = binary === 0 ? newColorRgb[1] : 255;
+                imgData.data[i + 2] = binary === 0 ? newColorRgb[2] : 255;
+                imgData.data[i + 3] = binary === 0 ? 255 : 0;
+            }
+        }
+
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const fileInput = document.querySelector('input[type="file"]');
+            const range = document.querySelector('input[type="range"]');
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+
+            fileInput.addEventListener('change', handleFileSelect);
+
+            function handleFileSelect(event) {
+                const file = event.target.files[0];
+
+                if (file) {
+                    const reader = new FileReader();
+
+                    reader.onload = function (e) {
+                        const img = new Image();
+                        img.src = e.target.result;
+
+                        img.onload = function () {
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                            ctx.drawImage(img, 0, 0, img.width, img.height);
+
+                            const imageData = ctx.getImageData(0, 0, img.width, img.height);
+                            toMonochrome(imageData, range.value / 100 * 255);
+                            ctx.putImageData(imageData, 0, 0);
+                            document.getElementById("download").disabled = false;
+
+                            canvas.setAttribute("name", file.name);
+                        };
+                    };
+
+                    reader.readAsDataURL(file);
+                }
+            }
+        });
+
+    </script>
+</head>
+
+<body style="display: flex; background-color: gray;">
+    <div
+        style="background-color: white; border-radius: 10px; margin: 10px auto; padding: 10px; min-height: min(60rem, 80vh); min-width: min(60rem, 80vw);">
+        <div style="text-align: center;">
+            <label>
+                Contrast
+                <input type="range" max="100" value="80">
+            </label>
+            <br />
+            <input type="file">
+        </div>
+
+        <br />
+
+        <canvas id="canvas"></canvas>
+        <div style="text-align: center; margin-top: auto;">
+            <button id="download" disabled="true">Download!</button>
+        </div>
+    </div>
+
+
+    <script type="module">
+        document.getElementById("download").addEventListener("click", async () => {
+            const data = await canvasToMonochromeBMP();
+            download({
+                data: data,
+                filename: document.getElementById("canvas").getAttribute("name").split(".")[0] + ".bmp",
+                contentType: "image/bmp",
+            })
+        })
+
+
+        export function download({ data, filename, contentType }) {
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(new Blob([data], { type: contentType }));
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(link.href);
+            link.remove();
+        }
+
+        // Gemaakt door Daniel - https://github.com/tricked-dev
+
+
+        export async function canvasToMonochromeBMP() {
+            let canvas = document.getElementById("canvas");
+
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imgData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                data[i] = data[i + 1] = data[i + 2] = avg;
+            }
+
+            let rows = [];
+            for (let y = 0; y < canvas.height; y++) {
+                let row = "";
+                for (let x = 0; x < canvas.width; x++) {
+                    const i = (y * canvas.width + x) * 4;
+                    row += data[i + 3] == 0 ? "1" : "0";
+                }
+                while (row.length % 32 !== 0) {
+                    row += "0";
+                }
+                rows.push(row);
+            }
+            rows = rows.reverse();
+            let bits = rows.join("");
+
+            const bytes = [];
+            for (let i = 0; i < bits.length; i += 8) {
+                bytes.push(parseInt(bits.substr(i, 8), 2));
+            }
+
+            const fileSize = 14 + 40 + 8 + bytes.length;
+            const dataOffset = 14 + 40 + 8;
+
+            const fileHeader = [
+                0x42,
+                0x4d,
+                fileSize & 0xff,
+                (fileSize >> 8) & 0xff,
+                (fileSize >> 16) & 0xff,
+                (fileSize >> 24) & 0xff,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                dataOffset & 0xff,
+                (dataOffset >> 8) & 0xff,
+                (dataOffset >> 16) & 0xff,
+                (dataOffset >> 24) & 0xff,
+            ];
+
+            const infoHeader = [
+                40, 0, 0, 0,
+                canvas.width & 0xff,
+                (canvas.width >> 8) & 0xff,
+                (canvas.width >> 16) & 0xff,
+                (canvas.width >> 24) & 0xff,
+                canvas.height & 0xff,
+                (canvas.height >> 8) & 0xff,
+                (canvas.height >> 16) & 0xff,
+                (canvas.height >> 24) & 0xff,
+                1, 0, 1, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 2,
+                0, 0, 0, 0, 0, 0, 0,
+            ];
+
+            const palette = [
+                0x00, 0x00, 0x00, 0x00,
+                0xff, 0xff, 0xff, 0x00,
+            ];
+
+            const bmpData = new Uint8Array([
+                ...fileHeader,
+                ...infoHeader,
+                ...palette,
+                ...bytes,
+            ]);
+            return bmpData;
+        }
+    </script>
+</body>
+
+</html>
