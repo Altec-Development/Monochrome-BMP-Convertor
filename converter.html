@@ -6,7 +6,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Altec - Photo to monochrome-BMP</title>
 
+</head>
+
+<body style="display: flex; background-color: gray;">
+    <img id="image" style="visibility: hidden;">
+    <div
+        style="background-color: white; border-radius: 10px; margin: 10px auto; padding: 10px; min-height: min(60rem, 80vh); min-width: min(60rem, 80vw);">
+        <div style="text-align: center;">
+            <label>
+                Contrast
+                <input type="range" max="100" value="80">
+            </label>
+            <br />
+            <input id="file" type="file">
+        </div>
+
+        <br />
+
+        <canvas id="canvas" style="min-height: min(60rem, 60vh); min-width: min(60rem, 60vw);"></canvas>
+        <div>
+            <label>
+                Height
+                <input id="height" type="number" disabled="true">
+            </label>
+            <label>
+                Width
+                <input id="width" type="number">
+            </label>
+        </div>
+        <div style="text-align: center; margin-top: auto;">
+            <button id="download" disabled="true">Download!</button>
+        </div>
+    </div>
+
+
     <script type="module">
+
+        export function _(id) {
+            return document.getElementById(id);
+        }
+
 
         function hexToRgb(hex) {
             hex = hex.replace(/^#/, "");
@@ -46,15 +85,19 @@
 
 
         document.addEventListener('DOMContentLoaded', () => {
-            const fileInput = document.querySelector('input[type="file"]');
+            const fileInput = _("file");
             const range = document.querySelector('input[type="range"]');
-            const canvas = document.getElementById('canvas');
+            const canvas = _('canvas');
             const ctx = canvas.getContext('2d');
 
             fileInput.addEventListener('change', handleFileSelect);
+            range.addEventListener('change', handleFileSelect);
+            _("height").addEventListener('change', handleFileSelect);
+            _("width").addEventListener('change', handleFileSelect);
 
-            function handleFileSelect(event) {
-                const file = event.target.files[0];
+            function handleFileSelect(ev) {
+                console.log("Rerender");
+                const file = fileInput.files[0];
 
                 if (file) {
                     const reader = new FileReader();
@@ -64,14 +107,26 @@
                         img.src = e.target.result;
 
                         img.onload = function () {
-                            canvas.width = img.width;
-                            canvas.height = img.height;
-                            ctx.drawImage(img, 0, 0, img.width, img.height);
+                            if (ev.target == fileInput) {
+                                _("width").value = img.width;
+                            }
 
-                            const imageData = ctx.getImageData(0, 0, img.width, img.height);
+                            const aspectRatio = img.width / img.height;
+
+                            const newWidth = _("width").value;
+                            const newHeight = Math.round(newWidth / aspectRatio);
+
+                            canvas.width = newWidth;
+                            canvas.height = newHeight;
+
+                            ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+                            const imageData = ctx.getImageData(0, 0, newWidth, newHeight);
                             toMonochrome(imageData, range.value / 100 * 255);
                             ctx.putImageData(imageData, 0, 0);
-                            document.getElementById("download").disabled = false;
+
+                            _("download").disabled = false;
+                            _("height").value = newHeight;
 
                             canvas.setAttribute("name", file.name);
                         };
@@ -82,36 +137,11 @@
             }
         });
 
-    </script>
-</head>
-
-<body style="display: flex; background-color: gray;">
-    <div
-        style="background-color: white; border-radius: 10px; margin: 10px auto; padding: 10px; min-height: min(60rem, 80vh); min-width: min(60rem, 80vw);">
-        <div style="text-align: center;">
-            <label>
-                Contrast
-                <input type="range" max="100" value="80">
-            </label>
-            <br />
-            <input type="file">
-        </div>
-
-        <br />
-
-        <canvas id="canvas"></canvas>
-        <div style="text-align: center; margin-top: auto;">
-            <button id="download" disabled="true">Download!</button>
-        </div>
-    </div>
-
-
-    <script type="module">
-        document.getElementById("download").addEventListener("click", async () => {
+        _("download").addEventListener("click", async () => {
             const data = await canvasToMonochromeBMP();
             download({
                 data: data,
-                filename: document.getElementById("canvas").getAttribute("name").split(".")[0] + ".bmp",
+                filename: _("canvas").getAttribute("name").split(".")[0] + ".bmp",
                 contentType: "image/bmp",
             })
         })
@@ -128,9 +158,8 @@
 
         // Gemaakt door Daniel - https://github.com/tricked-dev
 
-
         export async function canvasToMonochromeBMP() {
-            let canvas = document.getElementById("canvas");
+            let canvas = _("canvas");
 
             const ctx = canvas.getContext("2d", { willReadFrequently: true });
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
